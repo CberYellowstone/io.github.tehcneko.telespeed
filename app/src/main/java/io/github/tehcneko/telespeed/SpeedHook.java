@@ -82,8 +82,9 @@ public class SpeedHook extends XposedModule {
         }
 
         ClassLoader classLoader = param.getClassLoader();
+        final Class<?> fileLoadOperation;
         try {
-            Class<?> fileLoadOperation = Class.forName(CLASS_FILE_LOAD_OPERATION, false, classLoader);
+            fileLoadOperation = Class.forName(CLASS_FILE_LOAD_OPERATION, false, classLoader);
             Method updateParams = fileLoadOperation.getDeclaredMethod("updateParams");
             hook(updateParams)
                     .setExceptionMode(ExceptionMode.PROTECTIVE)
@@ -92,28 +93,36 @@ public class SpeedHook extends XposedModule {
                         applyBoost(chain.getThisObject(), packageName, classLoader);
                         return result;
                     });
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "Cannot hook " + packageName, t);
+            hookUnsupportedToast();
+            return;
+        }
 
-            try {
-                Method updateDownloadByteBudget = fileLoadOperation.getDeclaredMethod("updateDownloadByteBudget");
-                hook(updateDownloadByteBudget)
-                        .setExceptionMode(ExceptionMode.PROTECTIVE)
-                        .intercept(chain -> {
-                            Object result = chain.proceed();
-                            String level = getSpeedLevel(packageName, classLoader);
-                            if (!BOOST_NONE.equals(level)) {
-                                // Telegram 13.1+ caps currentMaxDownloadRequests here. Restore the
-                                // configured concurrency so the boost is not silently undone.
-                                setBooleanField(chain.getThisObject(), "useDownloadByteBudget", false);
-                                setIntField(chain.getThisObject(), "currentMaxDownloadRequests", maxRequests(level));
-                            }
-                            return result;
-                        });
-            } catch (NoSuchMethodException e) {
-                log(Log.DEBUG, TAG, "updateDownloadByteBudget() not found in " + packageName);
-            }
+        try {
+            Method updateDownloadByteBudget = fileLoadOperation.getDeclaredMethod("updateDownloadByteBudget");
+            hook(updateDownloadByteBudget)
+                    .setExceptionMode(ExceptionMode.PROTECTIVE)
+                    .intercept(chain -> {
+                        Object result = chain.proceed();
+                        String level = getSpeedLevel(packageName, classLoader);
+                        if (!BOOST_NONE.equals(level)) {
+                            // Telegram 13.1+ caps currentMaxDownloadRequests here. Restore the
+                            // configured concurrency so the boost is not silently undone.
+                            setBooleanField(chain.getThisObject(), "useDownloadByteBudget", false);
+                            setIntField(chain.getThisObject(), "currentMaxDownloadRequests", maxRequests(level));
+                        }
+                        return result;
+                    });
+        } catch (NoSuchMethodException e) {
+            log(Log.DEBUG, TAG, "updateDownloadByteBudget() not found in " + packageName);
+        } catch (Throwable t) {
+            log(Log.WARN, TAG, "Cannot hook updateDownloadByteBudget() in " + packageName, t);
+        }
 
-            // Fallback for builds where updateDownloadByteBudget() is inlined. start() posts the
-            // first request to the stage queue, so overriding the fields here still takes effect.
+        // Fallback for builds where updateDownloadByteBudget() is inlined. start() posts the
+        // first request to the stage queue, so overriding the fields here still takes effect.
+        try {
             Method start = findMethod(fileLoadOperation, "start", 3);
             if (start != null) {
                 hook(start)
@@ -136,8 +145,7 @@ public class SpeedHook extends XposedModule {
                         });
             }
         } catch (Throwable t) {
-            log(Log.ERROR, TAG, "Cannot hook " + packageName, t);
-            hookUnsupportedToast();
+            log(Log.WARN, TAG, "Cannot hook start() in " + packageName, t);
         }
     }
 
