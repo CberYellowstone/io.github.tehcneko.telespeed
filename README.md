@@ -45,6 +45,8 @@ The settings screen writes the module configuration through the libxposed servic
 
 If the service is not connected, TeleSpeed falls back to the module's local preferences and shows a short message. Reopen the settings screen after LSPosed connects to apply the values.
 
+After updating from the legacy version, open the settings screen once. Existing local values are migrated to the remote store; until then the module uses its default (`Enabled`).
+
 ## Build
 
 ```bash
