@@ -10,9 +10,19 @@
             android:entries="@array/boost_level"
             android:entryValues="@array/boost_value"
             android:defaultValue="average" />
+
+        <CheckBoxPreference
+            android:key="follow_neko"
+            android:title="@string/follow_neko"
+            android:summary="@string/follow_neko_summary"
+            android:defaultValue="false" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="@string/by">
+    <PreferenceCategory android:title="@string/about">
+
+        <Preference
+            android:key="version"
+            android:title="@string/version" />
 
         <Preference
             android:title="Nekogram"
@@ -22,5 +32,14 @@
                 android:data="https://nekogram.app" />
         </Preference>
 
+        <Preference
+            android:title="@string/source_code"
+            android:summary="github.com/CberYellowstone/io.github.tehcneko.telespeed">
+            <intent
+                android:action="android.intent.action.VIEW"
+                android:data="https://github.com/CberYellowstone/io.github.tehcneko.telespeed" />
+        </Preference>
+
     </PreferenceCategory>
+
 </PreferenceScreen>

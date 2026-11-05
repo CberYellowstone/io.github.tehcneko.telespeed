@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="xposed_description">提升你的 Telegram 下载速度。</string>
-    <string name="speed_toast">下载速度已被 TeleSpeed 提升！</string>
-    <string name="speed_toast_level">源于 %s, 加速：%s</string>
     <string name="speed_level">加速</string>
     <string name="boost_none">关闭</string>
     <string name="boost_average">开启</string>
     <string name="boost_extreme">极高</string>
-    <string name="ignore">忽略</string>
-    <string name="not_supported">您似乎正在使用过时的 LSPosed 版本或 LSPosed 未激活，请更新 LSPosed 或者激活后再试。</string>
     <string name="settings">设置</string>
-    <string name="by">源于</string>
-    <string name="unsupported">不支持的 Telegram 版本。</string>
+    <string name="about">关于</string>
+    <string name="version">版本</string>
+    <string name="source_code">源代码</string>
+    <string name="follow_neko">跟随 Nekogram 内置设置</string>
+    <string name="follow_neko_summary">在 Nekogram 中运行时，使用其内置的下载加速设置，而不是本模块的设置。</string>
+    <string name="service_unavailable">LSPosed 服务不可用。设置已保存到本地，服务连接后会自动应用。</string>
 </resources>
