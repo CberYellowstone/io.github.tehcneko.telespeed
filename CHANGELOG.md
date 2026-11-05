@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.2
+
+- Added support for the Telegram 13.2.0 web build (versionCode 72809,
+  `org.telegram.messenger.web`), which uses a different obfuscation map:
+  - `FileLoadOperation` -> `org.telegram.messenger.h7`
+  - `updateParams()` -> `t()`
+  - `updateDownloadByteBudget()` -> `s()`
+  - `start()` -> `q()`
+- Kept the 13.2.0 beta (`i7` / `u` / `t` / `r`) and 13.1 legacy profiles.
+- Bump version to 1.1.2 (versionCode 10).
+
 ## 1.1.1
 
 - Added support for Telegram 13.2.0, where `FileLoadOperation` is shipped as

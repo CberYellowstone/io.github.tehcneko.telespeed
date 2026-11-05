@@ -25,7 +25,7 @@ The values match Nekogram's built-in `Download speed boost` setting.
 
 Telegram 13.1 introduced `FileLoadOperation.updateDownloadByteBudget()`, which runs after `updateParams()` and can overwrite the configured request count. TeleSpeed 1.1.0 hooks that method as well: when a boost level is enabled, it disables the new byte budget for that operation and restores the selected request count. When the boost is disabled, Telegram's default behavior is left untouched.
 
-Tested against the Nekogram 13.1.1 source tree and the Telegram 13.2.0 beta (versionCode 72879). Telegram 13.2.0 ships an obfuscated `FileLoadOperation` as `org.telegram.messenger.i7`; TeleSpeed 1.1.1 includes a matching hook profile. Older Telegram versions without `updateDownloadByteBudget()` are still supported through the original `updateParams()` hook.
+Tested against the Nekogram 13.1.1 source tree, the Telegram 13.2.0 beta (versionCode 72879), and the Telegram 13.2.0 web build (versionCode 72809). Telegram 13.2.0 ships an obfuscated `FileLoadOperation` as `org.telegram.messenger.i7` in the beta and `org.telegram.messenger.h7` in the web build; TeleSpeed 1.1.2 includes matching hook profiles. Older Telegram versions without `updateDownloadByteBudget()` are still supported through the original `updateParams()` hook.
 
 ## Nekogram
 

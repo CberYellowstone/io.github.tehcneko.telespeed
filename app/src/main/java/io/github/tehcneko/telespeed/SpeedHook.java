@@ -95,6 +95,28 @@ public class SpeedHook extends XposedModule {
     /**
      * Covers builds that keep the FileLoadOperation class name but rename its members.
      */
+    /**
+     * Telegram 13.2.0 web build (versionCode 72809) uses a different obfuscation map:
+     * FileLoadOperation -> h7, updateParams() -> t(), updateDownloadByteBudget() -> s(),
+     * start() -> q(). The field names are the same short names as the beta build.
+     */
+    private static final HookProfile TELEGRAM_132_WEB_PROFILE = new HookProfile(
+            "org.telegram.messenger.h7",
+            "t",
+            "s",
+            "q", 0,
+            "n",
+            "o",
+            "p",
+            "q",
+            "k0",
+            "f",
+            "b0",
+            "r0",
+            "y",
+            "e"
+    );
+
     private static final HookProfile FILE_LOAD_OPERATION_132_PROFILE = new HookProfile(
             "org.telegram.messenger.FileLoadOperation",
             "u",
@@ -115,6 +137,7 @@ public class SpeedHook extends XposedModule {
     private static final HookProfile[] PROFILES = {
             LEGACY_PROFILE,
             TELEGRAM_132_PROFILE,
+            TELEGRAM_132_WEB_PROFILE,
             FILE_LOAD_OPERATION_132_PROFILE
     };
 
