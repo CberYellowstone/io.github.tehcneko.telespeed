@@ -28,8 +28,6 @@ public class SpeedHook extends XposedModule {
     public static final String BOOST_AVERAGE = "average";
     public static final String BOOST_EXTREME = "extreme";
 
-    private static final String CLASS_FILE_LOAD_OPERATION = "org.telegram.messenger.FileLoadOperation";
-    private static final String CLASS_FILE_LOADER = "org.telegram.messenger.FileLoader";
     private static final String CLASS_NEKO_CONFIG = "tw.nekomimi.nekogram.NekoConfig";
     private static final String CLASS_NOTIFICATION_CENTER = "org.telegram.messenger.NotificationCenter";
 
@@ -54,6 +52,71 @@ public class SpeedHook extends XposedModule {
             "tw.nekomimi.nekogram",
             "tw.nekomimi.nekogram.beta"
     ));
+
+    /**
+     * Telegram 13.1 and earlier keep the original FileLoadOperation names. Telegram 13.2.0
+     * (beta 72879) ships an obfuscated FileLoadOperation as org.telegram.messenger.i7 with
+     * methods u()/t()/r() and short field names.
+     */
+    private static final HookProfile LEGACY_PROFILE = new HookProfile(
+            "org.telegram.messenger.FileLoadOperation",
+            "updateParams",
+            "updateDownloadByteBudget",
+            "start", 3,
+            "downloadChunkSizeBig",
+            "maxDownloadRequests",
+            "maxDownloadRequestsBig",
+            "maxCdnParts",
+            "currentMaxDownloadRequests",
+            "useDownloadByteBudget",
+            "totalBytesCount",
+            "isStream",
+            "isPreloadVideoOperation",
+            "forceSmallChunk"
+    );
+
+    private static final HookProfile TELEGRAM_132_PROFILE = new HookProfile(
+            "org.telegram.messenger.i7",
+            "u",
+            "t",
+            "r", 0,
+            "n",
+            "o",
+            "p",
+            "q",
+            "k0",
+            "f",
+            "b0",
+            "r0",
+            "y",
+            "e"
+    );
+
+    /**
+     * Covers builds that keep the FileLoadOperation class name but rename its members.
+     */
+    private static final HookProfile FILE_LOAD_OPERATION_132_PROFILE = new HookProfile(
+            "org.telegram.messenger.FileLoadOperation",
+            "u",
+            "t",
+            "r", 0,
+            "n",
+            "o",
+            "p",
+            "q",
+            "k0",
+            "f",
+            "b0",
+            "r0",
+            "y",
+            "e"
+    );
+
+    private static final HookProfile[] PROFILES = {
+            LEGACY_PROFILE,
+            TELEGRAM_132_PROFILE,
+            FILE_LOAD_OPERATION_132_PROFILE
+    };
 
     private volatile SharedPreferences prefs;
     private volatile long speedUpShown = 0;
@@ -82,89 +145,120 @@ public class SpeedHook extends XposedModule {
         }
 
         ClassLoader classLoader = param.getClassLoader();
+        for (HookProfile profile : PROFILES) {
+            if (tryHook(profile, packageName, classLoader)) {
+                log(Log.INFO, TAG, "Hooked " + packageName + " via " + profile.className);
+                return;
+            }
+        }
+
+        log(Log.ERROR, TAG, "No hook profile matched " + packageName);
+        hookUnsupportedToast();
+    }
+
+    private boolean tryHook(HookProfile profile, String packageName, ClassLoader classLoader) {
         final Class<?> fileLoadOperation;
         try {
-            fileLoadOperation = Class.forName(CLASS_FILE_LOAD_OPERATION, false, classLoader);
-            Method updateParams = fileLoadOperation.getDeclaredMethod("updateParams");
+            fileLoadOperation = Class.forName(profile.className, false, classLoader);
+        } catch (Throwable t) {
+            return false;
+        }
+
+        if (!hasField(fileLoadOperation, profile.chunkSizeBig)
+                || !hasField(fileLoadOperation, profile.maxRequests)
+                || !hasField(fileLoadOperation, profile.maxRequestsBig)
+                || !hasField(fileLoadOperation, profile.maxCdnParts)
+                || !hasField(fileLoadOperation, profile.currentMaxRequests)
+                || !hasField(fileLoadOperation, profile.useByteBudget)) {
+            return false;
+        }
+
+        final Method updateParams;
+        try {
+            updateParams = fileLoadOperation.getDeclaredMethod(profile.updateParamsMethod);
+        } catch (Throwable t) {
+            return false;
+        }
+
+        try {
             hook(updateParams)
                     .setExceptionMode(ExceptionMode.PROTECTIVE)
                     .intercept(chain -> {
                         Object result = chain.proceed();
-                        applyBoost(chain.getThisObject(), packageName, classLoader);
+                        applyBoost(chain.getThisObject(), packageName, classLoader, profile);
                         return result;
                     });
         } catch (Throwable t) {
-            log(Log.ERROR, TAG, "Cannot hook " + packageName, t);
-            hookUnsupportedToast();
-            return;
+            log(Log.WARN, TAG, "Cannot hook " + profile.className + "." + profile.updateParamsMethod, t);
+            return false;
         }
 
         try {
-            Method updateDownloadByteBudget = fileLoadOperation.getDeclaredMethod("updateDownloadByteBudget");
+            Method updateDownloadByteBudget = fileLoadOperation.getDeclaredMethod(profile.updateByteBudgetMethod);
             hook(updateDownloadByteBudget)
                     .setExceptionMode(ExceptionMode.PROTECTIVE)
                     .intercept(chain -> {
                         Object result = chain.proceed();
                         String level = getSpeedLevel(packageName, classLoader);
                         if (!BOOST_NONE.equals(level)) {
-                            // Telegram 13.1+ caps currentMaxDownloadRequests here. Restore the
-                            // configured concurrency so the boost is not silently undone.
-                            setBooleanField(chain.getThisObject(), "useDownloadByteBudget", false);
-                            setIntField(chain.getThisObject(), "currentMaxDownloadRequests", maxRequests(level));
+                            setBooleanField(chain.getThisObject(), profile.useByteBudget, false);
+                            setIntField(chain.getThisObject(), profile.currentMaxRequests, maxRequests(level));
                         }
                         return result;
                     });
         } catch (NoSuchMethodException e) {
-            log(Log.DEBUG, TAG, "updateDownloadByteBudget() not found in " + packageName);
+            log(Log.DEBUG, TAG, profile.updateByteBudgetMethod + "() not found in " + profile.className);
         } catch (Throwable t) {
-            log(Log.WARN, TAG, "Cannot hook updateDownloadByteBudget() in " + packageName, t);
+            log(Log.WARN, TAG, "Cannot hook " + profile.className + "." + profile.updateByteBudgetMethod, t);
         }
 
-        // Fallback for builds where updateDownloadByteBudget() is inlined. start() posts the
-        // first request to the stage queue, so overriding the fields here still takes effect.
         try {
-            Method start = findMethod(fileLoadOperation, "start", 3);
+            Method start = findMethod(fileLoadOperation, profile.startMethod, profile.startParamCount);
             if (start != null) {
                 hook(start)
                         .setExceptionMode(ExceptionMode.PROTECTIVE)
                         .intercept(chain -> {
                             Object result = chain.proceed();
                             Object operation = chain.getThisObject();
-                            if (chain.getArg(0) != null
-                                    || getBooleanField(operation, "isStream", false)
-                                    || getBooleanField(operation, "isPreloadVideoOperation", false)
-                                    || getBooleanField(operation, "forceSmallChunk", false)) {
+                            if (profile.startParamCount > 0 && chain.getArg(0) != null) {
+                                return result;
+                            }
+                            if (getBooleanField(operation, profile.isStream, false)
+                                    || getBooleanField(operation, profile.isPreloadVideo, false)
+                                    || getBooleanField(operation, profile.forceSmallChunk, false)) {
                                 return result;
                             }
                             String level = getSpeedLevel(packageName, classLoader);
                             if (!BOOST_NONE.equals(level)) {
-                                setBooleanField(operation, "useDownloadByteBudget", false);
-                                setIntField(operation, "currentMaxDownloadRequests", maxRequests(level));
+                                setBooleanField(operation, profile.useByteBudget, false);
+                                setIntField(operation, profile.currentMaxRequests, maxRequests(level));
                             }
                             return result;
                         });
             }
         } catch (Throwable t) {
-            log(Log.WARN, TAG, "Cannot hook start() in " + packageName, t);
+            log(Log.WARN, TAG, "Cannot hook " + profile.className + "." + profile.startMethod, t);
         }
+
+        return true;
     }
 
-    private void applyBoost(Object operation, String packageName, ClassLoader classLoader) {
+    private void applyBoost(Object operation, String packageName, ClassLoader classLoader, HookProfile profile) {
         String level = getSpeedLevel(packageName, classLoader);
         int chunkSize = chunkSize(level);
         int requests = maxRequests(level);
 
-        setIntField(operation, "downloadChunkSizeBig", chunkSize);
-        setIntField(operation, "maxDownloadRequests", requests);
-        setIntField(operation, "maxDownloadRequestsBig", requests);
-        setIntField(operation, "maxCdnParts", (int) (getDefaultMaxFileSize(classLoader) / chunkSize));
+        setIntField(operation, profile.chunkSizeBig, chunkSize);
+        setIntField(operation, profile.maxRequests, requests);
+        setIntField(operation, profile.maxRequestsBig, requests);
+        setIntField(operation, profile.maxCdnParts, (int) (getDefaultMaxFileSize(classLoader) / chunkSize));
 
         if (!BOOST_NONE.equals(level)) {
-            setBooleanField(operation, "useDownloadByteBudget", false);
-            setIntField(operation, "currentMaxDownloadRequests", requests);
+            setBooleanField(operation, profile.useByteBudget, false);
+            setIntField(operation, profile.currentMaxRequests, requests);
         }
 
-        showBoostToast(operation, level, classLoader);
+        showBoostToast(operation, level, classLoader, profile);
     }
 
     private String getSpeedLevel(String packageName, ClassLoader classLoader) {
@@ -236,7 +330,7 @@ public class SpeedHook extends XposedModule {
 
     private long getDefaultMaxFileSize(ClassLoader classLoader) {
         try {
-            Class<?> fileLoader = Class.forName(CLASS_FILE_LOADER, false, classLoader);
+            Class<?> fileLoader = Class.forName("org.telegram.messenger.FileLoader", false, classLoader);
             Field field = fileLoader.getDeclaredField("DEFAULT_MAX_FILE_SIZE");
             field.setAccessible(true);
             return field.getLong(null);
@@ -265,12 +359,12 @@ public class SpeedHook extends XposedModule {
         }
     }
 
-    private void showBoostToast(Object operation, String level, ClassLoader classLoader) {
+    private void showBoostToast(Object operation, String level, ClassLoader classLoader, HookProfile profile) {
         if (BOOST_NONE.equals(level)) {
             return;
         }
 
-        long fileSize = getLongField(operation, "totalBytesCount", 0);
+        long fileSize = getLongField(operation, profile.totalBytes, 0);
         long now = System.currentTimeMillis();
         if (fileSize <= TOAST_MIN_FILE_SIZE || now - speedUpShown < TOAST_INTERVAL_MS) {
             return;
@@ -397,11 +491,18 @@ public class SpeedHook extends XposedModule {
         return null;
     }
 
+    private boolean hasField(Class<?> type, String fieldName) {
+        return findField(type, fieldName) != null;
+    }
+
     private Field findField(Object object, String fieldName) {
         if (object == null) {
             return null;
         }
-        Class<?> type = object.getClass();
+        return findField(object.getClass(), fieldName);
+    }
+
+    private Field findField(Class<?> type, String fieldName) {
         while (type != null) {
             try {
                 return type.getDeclaredField(fieldName);
@@ -410,5 +511,55 @@ public class SpeedHook extends XposedModule {
             }
         }
         return null;
+    }
+
+    private static final class HookProfile {
+        final String className;
+        final String updateParamsMethod;
+        final String updateByteBudgetMethod;
+        final String startMethod;
+        final int startParamCount;
+        final String chunkSizeBig;
+        final String maxRequests;
+        final String maxRequestsBig;
+        final String maxCdnParts;
+        final String currentMaxRequests;
+        final String useByteBudget;
+        final String totalBytes;
+        final String isStream;
+        final String isPreloadVideo;
+        final String forceSmallChunk;
+
+        HookProfile(String className,
+                    String updateParamsMethod,
+                    String updateByteBudgetMethod,
+                    String startMethod,
+                    int startParamCount,
+                    String chunkSizeBig,
+                    String maxRequests,
+                    String maxRequestsBig,
+                    String maxCdnParts,
+                    String currentMaxRequests,
+                    String useByteBudget,
+                    String totalBytes,
+                    String isStream,
+                    String isPreloadVideo,
+                    String forceSmallChunk) {
+            this.className = className;
+            this.updateParamsMethod = updateParamsMethod;
+            this.updateByteBudgetMethod = updateByteBudgetMethod;
+            this.startMethod = startMethod;
+            this.startParamCount = startParamCount;
+            this.chunkSizeBig = chunkSizeBig;
+            this.maxRequests = maxRequests;
+            this.maxRequestsBig = maxRequestsBig;
+            this.maxCdnParts = maxCdnParts;
+            this.currentMaxRequests = currentMaxRequests;
+            this.useByteBudget = useByteBudget;
+            this.totalBytes = totalBytes;
+            this.isStream = isStream;
+            this.isPreloadVideo = isPreloadVideo;
+            this.forceSmallChunk = forceSmallChunk;
+        }
     }
 }

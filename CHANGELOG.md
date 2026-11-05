@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.1
+
+- Added support for Telegram 13.2.0, where `FileLoadOperation` is shipped as
+  `org.telegram.messenger.i7` with obfuscated methods and fields.
+- Added a 13.2.0 hook profile (`u` / `t` / `r`, fields `n` / `o` / `p` / `q`),
+  while keeping the original 13.1 and older profile.
+- Added a fallback profile for builds that keep the `FileLoadOperation` class name
+  but rename its members.
+- Improved profile detection so an unsupported build no longer reports a false
+  "unsupported version" when one of the optional hooks fails.
+
 ## 1.1.0
 
 - Migrated from the legacy XposedBridge API (`de.robv.android.xposed:api:82`) to **libxposed API 101** (`io.github.libxposed:api:101.0.1`).
