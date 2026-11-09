@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.3
+
+- Added support for the Telegram 13.2.1 web build (versionCode 72919,
+  `org.telegram.messenger.web`):
+  - `FileLoadOperation` -> `org.telegram.messenger.d7`
+  - `updateParams()` -> `t()`
+  - `updateDownloadByteBudget()` -> `s()`
+  - `start()` -> `q()`
+  - fields `n/o/p/q/k0/f/b0/r0/y/e`
+- Kept the 13.2.0 web (`h7`), 13.2.0 beta (`i7`) and 13.1 legacy profiles.
+- Bump version to 1.1.3 (versionCode 11).
+
 ## 1.1.2
 
 - Added support for the Telegram 13.2.0 web build (versionCode 72809,

@@ -117,6 +117,27 @@ public class SpeedHook extends XposedModule {
             "e"
     );
 
+    /**
+     * Telegram 13.2.1 web build (versionCode 72919) keeps the same method/field names as
+     * the 13.2.0 web build but maps FileLoadOperation to org.telegram.messenger.d7.
+     */
+    private static final HookProfile TELEGRAM_1321_WEB_PROFILE = new HookProfile(
+            "org.telegram.messenger.d7",
+            "t",
+            "s",
+            "q", 0,
+            "n",
+            "o",
+            "p",
+            "q",
+            "k0",
+            "f",
+            "b0",
+            "r0",
+            "y",
+            "e"
+    );
+
     private static final HookProfile FILE_LOAD_OPERATION_132_PROFILE = new HookProfile(
             "org.telegram.messenger.FileLoadOperation",
             "u",
@@ -138,6 +159,7 @@ public class SpeedHook extends XposedModule {
             LEGACY_PROFILE,
             TELEGRAM_132_PROFILE,
             TELEGRAM_132_WEB_PROFILE,
+            TELEGRAM_1321_WEB_PROFILE,
             FILE_LOAD_OPERATION_132_PROFILE
     };
 
