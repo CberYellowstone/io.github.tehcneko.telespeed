@@ -25,7 +25,11 @@ The values match Nekogram's built-in `Download speed boost` setting.
 
 Telegram 13.1 introduced `FileLoadOperation.updateDownloadByteBudget()`, which runs after `updateParams()` and can overwrite the configured request count. TeleSpeed 1.1.0 hooks that method as well: when a boost level is enabled, it disables the new byte budget for that operation and restores the selected request count. When the boost is disabled, Telegram's default behavior is left untouched.
 
-Tested against the Nekogram 13.1.1 source tree, the Telegram 13.2.0 beta (versionCode 72879), the Telegram 13.2.0 web build (versionCode 72809), and the Telegram 13.2.1 web build (versionCode 72919). Telegram 13.2.x ships an obfuscated `FileLoadOperation` as `org.telegram.messenger.i7` in the beta, `org.telegram.messenger.h7` in the 13.2.0 web build, and `org.telegram.messenger.d7` in the 13.2.1 web build; TeleSpeed 1.1.3 includes matching hook profiles. Older Telegram versions without `updateDownloadByteBudget()` are still supported through the original `updateParams()` hook.
+Tested against the Nekogram 13.1.1 source tree, the Telegram 13.2.0 beta (versionCode 72879), the Telegram 13.2.0 web build (versionCode 72809), and the Telegram 13.2.1 web build (versionCode 72919).
+
+Telegram 13.2.x ships an obfuscated `FileLoadOperation` as `org.telegram.messenger.i7` in the beta, `org.telegram.messenger.h7` in the 13.2.0 web build, and `org.telegram.messenger.d7` in the 13.2.1 web build. TeleSpeed 1.2.0 keeps matching hardcoded profiles as a fast path and adds a **DexKit-based generic fallback**: if no profile matches, it scans the target APK for `FileLoadOperation` by diagnostic strings, identifies the parameter methods by the fields they write, and adjusts those fields by their runtime values. This means future Telegram builds normally do not need a new hardcoded profile.
+
+Older Telegram versions without `updateDownloadByteBudget()` are still supported through the original `updateParams()` hook.
 
 ## Nekogram
 
@@ -69,7 +73,12 @@ The file is ignored by Git. Without it, the release build falls back to the debu
 
 - The boost increases concurrency and chunk size; it does not bypass Telegram's server-side speed limits for free accounts.
 - Extreme mode may increase CPU, memory, and battery usage. Start with **Enabled**.
+- The DexKit fallback adds native libraries, so the APK is about 1.6 MB instead of 44 KB. The first scan of a new Telegram build takes a fraction of a second; the hardcoded profiles remain the fast path.
 - This project is a fork of the original TeleSpeed module by tehcneko, updated for current Telegram/Nekogram versions and migrated to libxposed API 101.
+
+## Third-party components
+
+- [DexKit](https://github.com/LuckyPray/DexKit) (Apache-2.0) is used for generic hook discovery.
 
 ## License
 

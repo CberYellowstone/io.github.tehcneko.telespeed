@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import io.github.libxposed.api.XposedInterface.ExceptionMode;
 import io.github.libxposed.api.XposedModule;
@@ -163,6 +164,7 @@ public class SpeedHook extends XposedModule {
             FILE_LOAD_OPERATION_132_PROFILE
     };
 
+    private final Set<String> hookedPackages = ConcurrentHashMap.newKeySet();
     private volatile SharedPreferences prefs;
     private volatile long speedUpShown = 0;
 
@@ -188,6 +190,9 @@ public class SpeedHook extends XposedModule {
         if (!TARGET_PACKAGES.contains(packageName)) {
             return;
         }
+        if (!hookedPackages.add(packageName)) {
+            return;
+        }
 
         ClassLoader classLoader = param.getClassLoader();
         for (HookProfile profile : PROFILES) {
@@ -197,8 +202,134 @@ public class SpeedHook extends XposedModule {
             }
         }
 
-        log(Log.ERROR, TAG, "No hook profile matched " + packageName);
-        hookUnsupportedToast();
+        log(Log.INFO, TAG, "No hardcoded profile for " + packageName + ", trying DexKit");
+        String apkPath = param.getApplicationInfo().sourceDir;
+        GenericHookFinder.findAndHook(packageName, classLoader, apkPath, new GenericHookFinder.Callback() {
+            @Override
+            public void onFound(GenericHookFinder.HookSpec spec) {
+                installGenericHooks(spec, packageName, classLoader);
+            }
+
+            @Override
+            public void onNotFound(String reason) {
+                log(Log.ERROR, TAG, "No hook profile matched " + packageName + " (" + reason + ")");
+                hookUnsupportedToast();
+            }
+        });
+    }
+
+    private void installGenericHooks(GenericHookFinder.HookSpec spec, String packageName, ClassLoader classLoader) {
+        try {
+            if (spec.updateParams == null) {
+                log(Log.ERROR, TAG, "DexKit found no updateParams for " + packageName);
+                return;
+            }
+
+            hook(spec.updateParams)
+                    .setExceptionMode(ExceptionMode.PROTECTIVE)
+                    .intercept(chain -> {
+                        Object result = chain.proceed();
+                        applyGenericBoost(chain.getThisObject(), packageName, classLoader, spec);
+                        return result;
+                    });
+
+            if (spec.updateByteBudget != null) {
+                hook(spec.updateByteBudget)
+                        .setExceptionMode(ExceptionMode.PROTECTIVE)
+                        .intercept(chain -> {
+                            Object result = chain.proceed();
+                            applyGenericByteBudget(chain.getThisObject(), packageName, classLoader, spec);
+                            return result;
+                        });
+            }
+
+            log(Log.INFO, TAG, "Hooked " + packageName + " via DexKit: " + spec.className);
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "Cannot install DexKit hooks for " + packageName, t);
+        }
+    }
+
+    private void applyGenericBoost(Object operation, String packageName, ClassLoader classLoader, GenericHookFinder.HookSpec spec) {
+        String level = getSpeedLevel(packageName, classLoader);
+        int chunkSize = chunkSize(level);
+        int requests = maxRequests(level);
+        long maxFileSize = getDefaultMaxFileSize(classLoader);
+
+        for (Field field : spec.updateParamsIntFields) {
+            try {
+                int value = field.getInt(operation);
+                if (isChunkSize(value)) {
+                    field.setInt(operation, chunkSize);
+                } else if (isRequestCount(value)) {
+                    field.setInt(operation, requests);
+                } else if (isMaxCdnParts(value)) {
+                    field.setInt(operation, (int) (maxFileSize / chunkSize));
+                }
+            } catch (Throwable t) {
+                log(Log.DEBUG, TAG, "Cannot adjust " + field.getName(), t);
+            }
+        }
+
+        if (!BOOST_NONE.equals(level)) {
+            for (Field field : spec.updateByteBudgetBooleanFields) {
+                try {
+                    field.setBoolean(operation, false);
+                } catch (Throwable t) {
+                    log(Log.DEBUG, TAG, "Cannot clear " + field.getName(), t);
+                }
+            }
+        }
+    }
+
+    private void applyGenericByteBudget(Object operation, String packageName, ClassLoader classLoader, GenericHookFinder.HookSpec spec) {
+        String level = getSpeedLevel(packageName, classLoader);
+        if (BOOST_NONE.equals(level)) {
+            return;
+        }
+        int requests = maxRequests(level);
+        for (Field field : spec.updateByteBudgetBooleanFields) {
+            try {
+                field.setBoolean(operation, false);
+            } catch (Throwable t) {
+                log(Log.DEBUG, TAG, "Cannot clear " + field.getName(), t);
+            }
+        }
+        setGenericCurrentMaxRequests(operation, spec, requests);
+    }
+
+    private void setGenericCurrentMaxRequests(Object operation, GenericHookFinder.HookSpec spec, int requests) {
+        Field target = null;
+        int best = Integer.MIN_VALUE;
+        for (Field field : spec.updateByteBudgetIntFields) {
+            try {
+                int value = field.getInt(operation);
+                if (value >= best) {
+                    best = value;
+                    target = field;
+                }
+            } catch (Throwable t) {
+                log(Log.DEBUG, TAG, "Cannot read " + field.getName(), t);
+            }
+        }
+        if (target != null && best >= 4) {
+            try {
+                target.setInt(operation, requests);
+            } catch (Throwable t) {
+                log(Log.DEBUG, TAG, "Cannot set " + target.getName(), t);
+            }
+        }
+    }
+
+    private boolean isChunkSize(int value) {
+        return value == 1024 * 128 || value == 1024 * 512 || value == 1024 * 1024;
+    }
+
+    private boolean isRequestCount(int value) {
+        return value == 4 || value == 8 || value == 12;
+    }
+
+    private boolean isMaxCdnParts(int value) {
+        return value > 1000 && !isChunkSize(value);
     }
 
     private boolean tryHook(HookProfile profile, String packageName, ClassLoader classLoader) {

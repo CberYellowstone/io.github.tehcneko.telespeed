@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0
+
+- Added a generic hook finder based on **DexKit**. When no hardcoded profile matches,
+  TeleSpeed scans the target APK for `FileLoadOperation` by its diagnostic strings,
+  identifies `updateParams` / `updateDownloadByteBudget` by the fields they write,
+  and adjusts the fields by their runtime values.
+- This removes the need to add a new hardcoded profile for every Telegram build.
+- The hardcoded 13.1 / 13.2.0 beta / 13.2.0 web / 13.2.1 web profiles remain as a fast path.
+- DexKit adds native libraries; the APK is now about 1.6 MB instead of 44 KB.
+- Bump version to 1.2.0 (versionCode 12).
+
 ## 1.1.3
 
 - Added support for the Telegram 13.2.1 web build (versionCode 72919,
