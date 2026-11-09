@@ -212,6 +212,15 @@ final class GenericHookFinder {
         return candidates.get(0);
     }
 
+    private static boolean isWrittenBy(FieldData field, MethodData method) {
+        for (MethodData writer : field.getWriters()) {
+            if (writer.getDescriptor().equals(method.getDescriptor())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static List<FieldData> writtenFields(MethodData method, String typeName) {
         List<FieldData> fields = new ArrayList<>();
         Set<String> seen = new HashSet<>();
@@ -243,6 +252,20 @@ final class GenericHookFinder {
         List<FieldData> byteIntFieldData = updateByteBudget == null
                 ? Collections.emptyList()
                 : writtenFields(updateByteBudget, "int");
+
+        // currentMaxDownloadRequests is written by both updateDownloadByteBudget and start;
+        // downloadConnectionsCount is only written by updateDownloadByteBudget. Prefer the
+        // field that start also writes so we do not corrupt the connection pool size.
+        FieldData currentMaxField = null;
+        for (FieldData field : byteIntFieldData) {
+            if (isWrittenBy(field, start)) {
+                currentMaxField = field;
+                break;
+            }
+        }
+        if (currentMaxField != null) {
+            byteIntFieldData = Collections.singletonList(currentMaxField);
+        }
 
         return new HookSpec(
                 classData.getName(),
